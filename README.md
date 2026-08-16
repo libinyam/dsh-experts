@@ -3,9 +3,9 @@
 [![CI](https://github.com/libinyam/dsh-experts/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 [License: MIT](LICENSE)
 
-DeepSeek Harness（dsh）的多专家插件：把「专家团」做成用户可写的数据目录，每个团队自动注册为模型可路由的 skill（`experts-<团队名>`）。引擎与阵容分离——编排、校验、门禁在插件里，专家人设与升级路由在团队目录里。
+DeepSeek Harness（dsh）的多专家插件：把「专家团」做成用户可写的数据目录，每个团队自动注册为模型可路由的 skill（`experts-<团队名>`）。引擎与阵容分离——团队发现、校验和工作流协议在插件里，专家人设与升级路由在团队目录里。
 
-设计参照 Qoder 专家团 / WorkBuddy Expert Teams 的产品形态，协作协议继承自 [github-project-review-skill](https://github.com/libinyam/github-project-review-skill) 的已验证机制（升级路由矩阵、数据门控决策、分层输出深度），并全部改建于 dsh 原生能力（`ctx.skills` provider + subagent 的 persona/outputSchema/并行派遣）之上。
+设计参照 Qoder 专家团 / WorkBuddy Expert Teams 的产品形态，协作协议继承自 [github-project-review-skill](https://github.com/libinyam/github-project-review-skill) 的已验证机制（升级路由矩阵、数据门控决策、分层输出深度），并全部改建于 dsh 原生能力（skills provider、可继续 child、嵌套 subagent、消息和 report 通道）之上。
 
 ## 工作原理
 
@@ -18,8 +18,10 @@ DeepSeek Harness（dsh）的多专家插件：把「专家团」做成用户可�
                                               ↓
                             skill 目录出现 experts-<团队名>，模型按 whenToUse 路由
                                               ↓
-                            运行时按模板用原生 subagent 并行派遣专家
-                            （persona=人设卡，outputSchema=发现结果 JSON Schema）
+                            当前会话启动真实 lead child
+                                      ↓
+                            lead 按任务动态启动 specialist child
+                            （相关专家才启动，可继续/追加派遣）
 ```
 
 同名团队按 rank 就近覆盖（项目 > 自定义 > 用户 > 随包），魔改官方示例的标准动作：把示例目录拷到 `<dshHome>/experts/` 下改。
@@ -76,7 +78,7 @@ DeepSeek Harness（dsh）的多专家插件：把「专家团」做成用户可�
 my-team/
 ├── team.json     # 机器接线：名称/描述/工作流/专家/升级路由
 ├── TEAM.md       # 团队级约定（可选，注入技能 body）
-└── experts/      # 人设卡，派遣时作为 subagent persona 全文传入
+└── experts/      # 人设卡，由 lead 在 specialist prompt 中全文注入
     ├── lead.md
     └── coder.md
 ```
@@ -89,7 +91,7 @@ my-team/
 | `description` | ✓ | 技能目录中的一句话描述（≤500 字符） |
 | `whenToUse` |  | 路由提示 |
 | `workflow` | ✓ | 工作流模板名，v0.1 仅 `review` |
-| `experts[]` | ✓ | 1-8 位；`{id, role: coordinator\|specialist, card, modelHint?}`；恰好一位 coordinator（由主代理扮演，不派遣）；card 必须是团队目录内的相对路径 |
+| `experts[]` | ✓ | 1-8 位；`{id, role: coordinator\|specialist, card, modelHint?}`；恰好一位 coordinator（作为 lead child 启动）；card 必须是团队目录内的相对路径 |
 | `escalations[]` |  | `{from, to, when, priority: P0\|P1\|P2}`；from/to 必须引用专家 id，不许自指 |
 | `reportLanguage` |  | `zh`（默认）或 `en` |
 
@@ -121,7 +123,7 @@ npm run validate-team teams/web-review   # 校验内置示例团队
 
 - **插件没生效/团队没出现**：dsh 控制台日志看 `skills.registerProvider` 相关错误；最常见原因是某个团队 `team.json` 校验失败——错误消息自带文件路径与字段，修掉即可；或跑 `scripts/validate-team.mjs <目录>` 离线定位。
 - **改了团队没生效**：v0.1 无文件 watcher，重载插件（重启会话或触发插件重载）。
-- **专家派遣失败**：看模板降级路径——无 subagent 工具时自动退化为单代理顺序扮演，报告开头会注明；outputSchema 被后端拒绝时退化为纯文本汇报。
+- **专家派遣失败**：看 lead 的调度记录；无 subagent 或 report 工具时必须明确标记团队运行时不可用，不得伪装成专家已经工作。
 - **确定性排查**：`list()`/`get()` 的行为由 `src/teams.js` 覆盖测试锁定（层级、rank、契约形状）。
 
 ## 已知问题（v0.1）
@@ -131,7 +133,7 @@ npm run validate-team teams/web-review   # 校验内置示例团队
 - 仅 `review` 工作流模板；`develop` 模板（patch 化输出 + 绿灯门禁 + 人工 PR）在路线图上。
 - 未扫描 `.agents` 系根目录（`.dsh` 覆盖项目与用户两层）。
 - `modelHint` 只是模板提示，不强制路由模型。
-- `FINDINGS_SCHEMA` 使用保守 JSON Schema 子集，未对每个 subagent 后端的 `assertObjectJsonSchema` 实现逐一验证；被拒时模板有降级路径。
+- `FINDINGS_SCHEMA` 使用保守 JSON Schema 子集，当前作为 specialist prompt 的文本协议，不是每次 subagent 调用的结构化输出参数。
 - 一个坏团队（且无低 rank 同名遮蔽）会让本提供方整体报错（fail loud 设计）；修复该团队即恢复。
 
 ## License

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- 工作流改为 lead-first：当前会话启动真实 lead subagent，由 lead 根据任务按需启动 specialist，并通过 `report` 返回最终报告。
+- 修正工作流对 dsh `subagent` 工具的调用约定：人设与发现结构作为 prompt 协议传入，不再声称每次调用可动态传入不存在的 `persona`/`outputSchema` 参数。
+
 ## 0.1.0 (2026-08-16)
 
 首个可交付版本。

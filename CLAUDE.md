@@ -22,15 +22,15 @@
 | manifest 校验拒绝未知字段（拼写保护）、拒绝路径逃逸（含 Windows 盘符前缀与 NUL）、强制恰好一个 coordinator；内联进技能 body 的自由文本字段必须单行且不含管道符；卡片不得含 4+ 反引号围栏行 | tests/manifest.test.js 对应反例必须红 |
 | 发现层级 rank：project(100) < custom(300) < user(400) < bundled(600)，同名团队低 rank 覆盖（先读名去重，再对胜者全量校验——有效低 rank 团队可遮蔽同名坏团队） | tests/teams.test.js 层级覆盖与遮蔽用例 |
 | 组装出的技能 body 必须含：花名册表、每专家人设卡围栏块、升级矩阵表、工作流模板、团队约定五节 | tests/compose.test.js 断言各节存在 |
-| 输出给 outputSchema 的 JSON Schema 只用保守子集（type/properties/items/required/additionalProperties/enum） | 模板内 schema 由 tests/compose.test.js 解析断言子集 |
+| 专家发现协议只用保守 JSON Schema 子集（type/properties/items/required/additionalProperties/enum），作为 prompt 文本协议传给 specialist | 模板内 schema 由 tests/compose.test.js 解析断言子集 |
 | src/ 禁 console.log（CLI 脚本除外） | guard: grep src/ 中 console. 即 fail |
 | 文本文件 LF、UTF-8、两空格缩进 | .editorconfig + .gitattributes；guard 冒烟检查 BOM |
 
 ## 产品路线（已拍板）
 
-- v0.1（本版）：review 工作流模板 + web-review 示例团队（5 专家）+ 团队校验 CLI + 脚手架 CLI + bundle 注册。
+- v0.1（本版）：lead-first review 工作流模板 + web-review 示例团队（1 个 lead + 4 个按需 specialist）+ 团队校验 CLI + 脚手架 CLI + bundle 注册。
 - 明确不做（写入已知问题，防止顺手做出）：develop 工作流模板、文件 watcher（新增团队需重载插件）、`.agents` 系根目录、按专家强制模型路由（v0.1 仅模板提示）、团队市场/远程安装。
-- 专家团运行时依赖 dsh 原生 subagent 工具（persona/outputSchema）；部署未装载时模板走单代理顺序扮演降级路径，并在报告开头注明降级。
+- 专家团运行时依赖 dsh 原生 `subagent`、`list_agents`、`send_message` 和 child-scoped `report`；lead 是真实 child，specialist 由 lead 按需启动。部署未装载这些能力时必须标记团队运行时不可用，禁止伪装成专家已执行。
 
 ## 接点台账（已验证的 harness 接点及出处）
 
@@ -44,6 +44,7 @@
 | rank 语义 | 层内重名低 rank 胜；既有惯例 100/200/300/400/500/600 | skill-filesystem/src/index.ts 常量；BUNDLED_SKILL_RANK=600 |
 | dshHome 解析 | `$DSH_HOME` 或 `~/.dsh` | skill-filesystem 引用 dsh-home-paths resolveDshHome |
 | 项目根 | 含 `.git` 的最近祖先目录 | docs/subsystems/skills.zh.md「本地发现优先级」 |
-| subagent 工具 | `subagent` 工具支持 persona/outputSchema/并行派发；模型词汇见 tool-subagent README | packages/subagent/tool-subagent/README.md |
+| subagent 工具 | `subagent` 支持 `description`/`prompt`/`run_in_background`；可继续模式返回持久 child id；子 agent 可嵌套委派 | packages/subagent/tool-subagent/src/index.ts；packages/subagent/subagent/README.zh.md |
+| subagent 控制 | `list_agents` 枚举可继续 child，`send_message` 继续同一 child，child-scoped `report` 以 wakeup 消息回传父级 | packages/subagent/tool-subagent-control/src/list-agents.ts；packages/subagent/tool-subagent-control/src/index.ts；packages/subagent/tool-subagent-report/src/index.ts |
 
 台账行新增时必须附出处；发现源头变更（harness 破坏性更新）时，先更新台账再改代码。
