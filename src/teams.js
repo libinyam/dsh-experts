@@ -140,6 +140,11 @@ function toCandidate(resolved, manifest, source, rank) {
       workflow: manifest.workflow,
       coordinator: coordinator.id,
       experts: manifest.experts.map((expert) => expert.id),
+      expertRoster: manifest.experts.map((expert) => ({
+        id: expert.id,
+        role: expert.role,
+        card: manifest.cards.get(expert.id),
+      })),
     },
   }
 }
@@ -177,6 +182,11 @@ export async function loadTeam(resolved, candidate, options = {}) {
       workflow: manifest.workflow,
       coordinator: manifest.experts.find((expert) => expert.role === 'coordinator').id,
       experts: manifest.experts.map((expert) => expert.id),
+      expertRoster: manifest.experts.map((expert) => ({
+        id: expert.id,
+        role: expert.role,
+        card: manifest.cards.get(expert.id),
+      })),
     },
   }
 }

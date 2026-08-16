@@ -1,6 +1,6 @@
 /**
  * Skill body composition: engine workflow template + team roster + inlined
- * persona cards + escalation matrix + optional team prose.
+ * prompt persona cards + escalation matrix + optional team prose.
  *
  * Cards are INLINED (not referenced by path) because user/bundled team
  * directories sit outside the agent workspace and may not be readable by the
@@ -123,7 +123,7 @@ export function composeTeamSkill(manifest, template) {
     '',
     rosterTable(manifest),
     '',
-    '## 专家人设卡（派遣时作为 persona 参数全文传入）',
+    '## 专家人设卡（由 lead 在 prompt 中全文注入）',
     '',
     cardBlocks(manifest),
     '',

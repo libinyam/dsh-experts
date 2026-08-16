@@ -38,12 +38,24 @@ describe('composeTeamSkill (bundled web-review)', () => {
     const body = composeTeamSkill(manifest, template)
     assert.ok(body.includes('# 专家团：web-review'))
     assert.ok(body.includes('## 花名册'))
-    assert.ok(body.includes('## 专家人设卡（派遣时作为 persona 参数全文传入）'))
+    assert.ok(body.includes('## 专家人设卡（由 lead 在 prompt 中全文注入）'))
     assert.ok(body.includes('### 专家人设卡：security'))
     assert.ok(body.includes('## 升级路由矩阵'))
     assert.ok(body.includes('## 工作流'))
     assert.ok(body.includes('## 团队约定（TEAM.md）'))
     assert.ok(!/\{\{[A-Z_]+\}\}/.test(body), 'unresolved placeholders remain')
+  })
+
+  it('uses lead-first dynamic dispatch instead of direct main-agent coordination', async () => {
+    const manifest = await bundledWebReviewManifest()
+    const body = composeTeamSkill(manifest, await readWorkflowTemplate('review'))
+    assert.ok(body.includes('## 阶段 1：启动 Lead'))
+    assert.ok(body.includes('真正的 lead subagent'))
+    assert.ok(body.includes('只为确实相关的 specialist 创建 child'))
+    assert.ok(body.includes('list_agents'))
+    assert.ok(body.includes('send_message'))
+    assert.ok(body.includes('完成前必须调用 `report`'))
+    assert.ok(!body.includes('即当前主代理扮演的调度角色，不单独派遣'))
   })
 
   it('inlines every persona card inside four-backtick fences', async () => {
