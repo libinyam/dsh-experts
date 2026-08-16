@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it, before, after } from 'node:test'
-import { mkdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { validateTeam } from '../src/manifest.js'
 import { BASE_MANIFEST, cleanup, tempDir, writeTeam } from './helpers.js'
@@ -135,11 +135,11 @@ describe('validateTeam (fail-loud violations)', () => {
       (error) => error.code === 'INVALID_TEAM' && error.message.includes('escapes'),
     )
   })
-  it('card path escaping via symlink rejected', async () => {
-    if (process.platform === 'win32') return // symlink creation needs privileges on Windows
+  it('card path escaping via symlink rejected', { skip: process.platform === 'win32' && 'symlink creation needs privileges on Windows' }, async () => {
     const outside = join(root, 'outside.md')
     await writeFile(outside, 'x', 'utf8')
     const teamDir = await writeTeam(root, { name: 't-symlink' })
+    await rm(join(teamDir, 'experts', 'lead.md')) // POSIX symlink() refuses to replace an existing file
     await symlink(outside, join(teamDir, 'experts', 'lead.md'))
     await assert.rejects(
       () => validateTeam(teamDir, WORKFLOWS),
