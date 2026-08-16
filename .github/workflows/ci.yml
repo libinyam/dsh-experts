@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Test (unit + guard)
+        run: node --test
+      - name: Validate bundled teams
+        run: node scripts/validate-team.mjs teams/web-review
+      - name: Scaffold round-trip
+        shell: bash
+        run: |
+          node scripts/new-team.mjs --name ci-team --from web-review --root "$RUNNER_TEMP/experts"
+          node scripts/validate-team.mjs "$RUNNER_TEMP/experts/ci-team"
