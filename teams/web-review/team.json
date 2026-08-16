@@ -1,0 +1,66 @@
+{
+  "name": "web-review",
+  "description": "评审一个 Web 项目的推广/发布就绪度：前端、后端、测试、安全四位专家并行分析，协调者数据门控产出 go/no-go 报告。",
+  "whenToUse": "用户要求评审、评估、把关一个 Web 项目（owner/repo、URL 或本地路径）是否可以推广、发布、开源时使用。",
+  "workflow": "review",
+  "reportLanguage": "zh",
+  "experts": [
+    {
+      "id": "tech-lead",
+      "role": "coordinator",
+      "card": "experts/tech-lead.md"
+    },
+    {
+      "id": "frontend",
+      "role": "specialist",
+      "card": "experts/frontend.md"
+    },
+    {
+      "id": "backend",
+      "role": "specialist",
+      "card": "experts/backend.md"
+    },
+    {
+      "id": "test",
+      "role": "specialist",
+      "card": "experts/test.md"
+    },
+    {
+      "id": "security",
+      "role": "specialist",
+      "card": "experts/security.md"
+    }
+  ],
+  "escalations": [
+    {
+      "from": "backend",
+      "to": "security",
+      "when": "SQL 字符串拼接、鉴权/输入校验薄弱、敏感信息写入日志",
+      "priority": "P0"
+    },
+    {
+      "from": "frontend",
+      "to": "security",
+      "when": "XSS 风险模式（不安全 innerHTML/eval）、凭据明文存储",
+      "priority": "P0"
+    },
+    {
+      "from": "frontend",
+      "to": "test",
+      "when": "前端测试为零或关键交互路径无覆盖",
+      "priority": "P1"
+    },
+    {
+      "from": "backend",
+      "to": "test",
+      "when": "后端无测试基建或关键路径不可测",
+      "priority": "P1"
+    },
+    {
+      "from": "test",
+      "to": "backend",
+      "when": "关键路径不可测疑似架构耦合，需要架构上下文定位",
+      "priority": "P1"
+    }
+  ]
+}
