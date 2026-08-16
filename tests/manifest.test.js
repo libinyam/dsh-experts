@@ -171,4 +171,69 @@ describe('validateTeam (fail-loud violations)', () => {
     await mkdir(teamDir, { recursive: true })
     await assert.rejects(() => validateTeam(teamDir, WORKFLOWS), (e) => e.code === 'TEAM_READ_FAILED')
   })
+
+  // ---- adversarial-review regressions ----
+  it('drive-prefixed card path rejected on every platform (win32 drive-relative escape)', async () => {
+    const teamDir = join(root, 't-drive')
+    await mkdir(join(teamDir, 'experts'), { recursive: true })
+    await writeFile(
+      join(teamDir, 'team.json'),
+      JSON.stringify({ name: 't-drive', description: 'x', workflow: 'review', escalations: [], experts: [{ id: 'lead', role: 'coordinator', card: 'C:Windows/win.ini' }] }),
+      'utf8',
+    )
+    await assert.rejects(
+      () => validateTeam(teamDir, WORKFLOWS),
+      (error) => error.code === 'INVALID_TEAM' && error.message.includes('drive prefix'),
+    )
+  })
+  it('NUL byte in card path rejected', async () => {
+    const teamDir = join(root, 't-nul')
+    await mkdir(join(teamDir, 'experts'), { recursive: true })
+    await writeFile(
+      join(teamDir, 'team.json'),
+      JSON.stringify({ name: 't-nul', description: 'x', workflow: 'review', escalations: [], experts: [{ id: 'lead', role: 'coordinator', card: 'experts/lea\0d.md' }] }),
+      'utf8',
+    )
+    await assert.rejects(
+      () => validateTeam(teamDir, WORKFLOWS),
+      (error) => error.code === 'INVALID_TEAM' && error.message.includes('NUL'),
+    )
+  })
+  it('oversized TEAM.md fails loud instead of being silently dropped', async () => {
+    const teamDir = await writeTeam(root, { name: 't-bigprose' }, { 'TEAM.md': 'x'.repeat(64 * 1024 + 1) })
+    await assert.rejects(
+      () => validateTeam(teamDir, WORKFLOWS),
+      (error) => error.code === 'INVALID_TEAM' && error.message.includes('TEAM.md exceeds'),
+    )
+  })
+  for (const [field, build] of [
+    ['description', (v) => ({ description: v })],
+    ['whenToUse', (v) => ({ whenToUse: v })],
+  ]) {
+    it(`${field} with newline or pipe rejected (markdown injection)`, async () => {
+      for (const bad of ['line1\nline2 ## forged', 'before | after']) {
+        const teamDir = await writeTeam(root, { name: `t-inj-${field}`, ...build(bad) })
+        await assert.rejects(
+          () => validateTeam(teamDir, WORKFLOWS),
+          (error) => error.code === 'INVALID_TEAM' && error.message.includes(field),
+        )
+      }
+    })
+  }
+  it('escalation when with pipe rejected (table injection)', () =>
+    expectInvalid({ name: 't-escpipe', escalations: [{ from: 'coder', to: 'lead', when: 'SQL | NoSQL', priority: 'P1' }] }, (m) => m.includes('escalations[0].when')))
+  it('modelHint with newline rejected (roster injection)', () =>
+    expectInvalid(
+      { name: 't-hintnl', experts: [{ id: 'lead', role: 'coordinator', card: 'experts/lead.md', modelHint: 'flash\n| forged | row |' }] },
+      (m) => m.includes('modelHint'),
+    ))
+  it('card containing a 4+ backtick fence line rejected (skill-body fence break)', async () => {
+    const teamDir = await writeTeam(root, { name: 't-fence' }, { 'experts/lead.md': 'ok\n````\nbroken\n' })
+    // writeTeam writes BASE cards first; overwrite lead's card with the fence content
+    await writeFile(join(teamDir, 'experts', 'lead.md'), 'ok\n````markdown\nbroken\n', 'utf8')
+    await assert.rejects(
+      () => validateTeam(teamDir, WORKFLOWS),
+      (error) => error.code === 'INVALID_TEAM' && error.message.includes('backtick'),
+    )
+  })
 })

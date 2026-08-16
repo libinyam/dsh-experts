@@ -34,4 +34,10 @@ describe('resolveConfig', () => {
     assert.throws(() => resolveConfig({ teamDirs: ['ok', ''] }), (e) => e.code === 'INVALID_CONFIG')
     assert.throws(() => resolveConfig({ includeBundledTeams: 1 }), (e) => e.code === 'INVALID_CONFIG')
   })
+
+  it('null values fail loud instead of silently defaulting (YAML `key:` produces null)', () => {
+    for (const key of ['providerName', 'includeDefaultRoots', 'dshHome', 'teamDirs', 'includeBundledTeams']) {
+      assert.throws(() => resolveConfig({ [key]: null }), (error) => error.code === 'INVALID_CONFIG' && error.message.includes(key))
+    }
+  })
 })

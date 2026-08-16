@@ -6,9 +6,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { validateTeam } from '../src/manifest.js'
+import { ERROR_CODES } from '../src/errors.js'
 import { bundledTeamsDir, templatesDir } from '../src/paths.js'
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -21,10 +22,15 @@ function dirname(p) {
 async function listFiles(dir, filter = () => true, accumulator = []) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
-    if (entry.isDirectory()) await listFiles(full, filter, accumulator)
+    if (entry.isDirectory() && entry.name !== 'node_modules') await listFiles(full, filter, accumulator)
     else if (filter(full)) accumulator.push(full)
   }
   return accumulator
+}
+
+/** Files belonging to this package (excludes anything under a nested node_modules). */
+function ownsPackage(file) {
+  return !relative(PACKAGE_ROOT, file).split(sep).includes('node_modules')
 }
 
 describe('guard: package manifest', () => {
@@ -74,8 +80,33 @@ describe('guard: source conventions', () => {
     }
   })
 
+  it('src/ stays plain JavaScript: no .ts files, no tsconfig, no build step', async () => {
+    const files = await listFiles(join(PACKAGE_ROOT, 'src'))
+    assert.ok(files.length > 0, 'src/ scan found nothing — the guard would be a no-op')
+    for (const file of files) assert.ok(!file.endsWith('.ts'), `${file} must be .js (plain ESM, no build step)`)
+    await assert.rejects(stat(join(PACKAGE_ROOT, 'tsconfig.json')), (e) => e.code === 'ENOENT')
+  })
+
+  it('error codes used across src/ stay in sync with the declared vocabulary', async () => {
+    const declared = new Set(ERROR_CODES)
+    // Shape-filtered so fs codes compared inline ('ENOENT', 'EACCES', ...) are
+    // not mistaken for plugin error codes; every plugin code matches one shape.
+    const CODE_SHAPE = /^(INVALID_[A-Z_]+|[A-Z_]+_FAILED|TEMPLATE_MISSING|DISCOVERY_FAILED)$/
+    const used = new Set()
+    const files = await listFiles(join(PACKAGE_ROOT, 'src'), (f) => f.endsWith('.js') && !f.endsWith('errors.js'))
+    for (const file of files) {
+      const text = await readFile(file, 'utf8')
+      for (const match of text.matchAll(/,\s*'([A-Z][A-Z_]{3,})'/g)) {
+        if (CODE_SHAPE.test(match[1])) used.add(match[1])
+      }
+    }
+    for (const code of used) assert.ok(declared.has(code), `code ${code} is used in src but missing from ERROR_CODES (errors.js)`)
+    for (const code of declared) assert.ok(used.has(code), `code ${code} is declared in ERROR_CODES but never used`)
+  })
+
   it('text files carry no UTF-8 BOM', async () => {
-    const files = await listFiles(PACKAGE_ROOT, (f) => /\.(js|mjs|json|md|yml)$/.test(f) && !f.includes(join('node_modules', '')))
+    const files = await listFiles(PACKAGE_ROOT, (f) => /\.(js|mjs|json|md|yml)$/.test(f) && ownsPackage(f))
+    assert.ok(files.length > 10, 'BOM scan found suspiciously few files — the guard would be a no-op')
     for (const file of files) {
       const buf = await readFile(file)
       assert.ok(!(buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf), `${file} starts with a BOM`)

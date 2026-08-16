@@ -18,9 +18,9 @@
 | Plain ESM JavaScript，无构建步骤，无 TypeScript | guard: src/ 出现 .ts 文件或 tsconfig.json 即 fail；import 语法错误由 import 冒烟测试红 |
 | Node >= 18 可运行（开发机 v24） | engines 字段 + CI 的 node 矩阵 |
 | 所有抛错走 errors.js 的 `pluginError(msg, code, details)`，code 为稳定大写蛇值 | 代码评审清单 + guard: src/ 内 `throw new Error(` 直接出现即 fail |
-| 错误码清单在 errors.js 顶部注释维护，新增码必须同步该清单 | guard: 扫描 code 字面量与注释清单 diff |
-| manifest 校验拒绝未知字段（拼写保护）、拒绝路径逃逸、强制恰好一个 coordinator | tests/manifest.test.js 对应反例必须红 |
-| 发现层级 rank：project(100) < custom(300) < user(400) < bundled(600)，同名团队低 rank 覆盖 | tests/teams.test.js 层级覆盖用例 |
+| 错误码词汇表是 errors.js 导出的 `ERROR_CODES`（单一事实源） | guard: 双向同步扫描——用了未声明的码、声明了未用的码都红 |
+| manifest 校验拒绝未知字段（拼写保护）、拒绝路径逃逸（含 Windows 盘符前缀与 NUL）、强制恰好一个 coordinator；内联进技能 body 的自由文本字段必须单行且不含管道符；卡片不得含 4+ 反引号围栏行 | tests/manifest.test.js 对应反例必须红 |
+| 发现层级 rank：project(100) < custom(300) < user(400) < bundled(600)，同名团队低 rank 覆盖（先读名去重，再对胜者全量校验——有效低 rank 团队可遮蔽同名坏团队） | tests/teams.test.js 层级覆盖与遮蔽用例 |
 | 组装出的技能 body 必须含：花名册表、每专家人设卡围栏块、升级矩阵表、工作流模板、团队约定五节 | tests/compose.test.js 断言各节存在 |
 | 输出给 outputSchema 的 JSON Schema 只用保守子集（type/properties/items/required/additionalProperties/enum） | 模板内 schema 由 tests/compose.test.js 解析断言子集 |
 | src/ 禁 console.log（CLI 脚本除外） | guard: grep src/ 中 console. 即 fail |

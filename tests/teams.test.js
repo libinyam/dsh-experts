@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it, before, after } from 'node:test'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { discoverTeams, loadTeam } from '../src/teams.js'
 import { bundledTeamsDir } from '../src/paths.js'
@@ -88,6 +88,38 @@ describe('discoverTeams', () => {
       () => discoverTeams(testConfig({ teamDirs: [badRoot] }), {}),
       (error) => error.code === 'INVALID_TEAM' && error.message.includes(join(badRoot, 'broken', 'team.json')),
     )
+  })
+
+  it('a valid lower-rank team shadows a same-name invalid higher-rank team', async () => {
+    const projectRoot = join(root, 'proj2')
+    const badCustom = join(root, 'bad-custom')
+    await mkdir(join(projectRoot, '.git'), { recursive: true })
+    await writeTeam(join(projectRoot, '.dsh', 'experts')) // valid demo-team at rank 100
+    await writeTeam(badCustom, { name: 'demo-team', expert: 'typo' }) // parses, name reads, full check would fail
+    const candidates = await discoverTeams(
+      testConfig({ includeDefaultRoots: true, dshHome: join(root, 'fake-home2'), teamDirs: [badCustom] }),
+      { cwd: projectRoot },
+    )
+    assert.equal(candidates.length, 1)
+    assert.equal(candidates[0].rank, 100)
+    assert.equal(candidates[0].source, 'project-dsh')
+  })
+
+  it('a symlinked team directory is discovered (junction on Windows)', async () => {
+    const realRoot = join(root, 'real-teams')
+    const linkRoot = join(root, 'link-teams')
+    await writeTeam(realRoot)
+    await mkdir(linkRoot, { recursive: true })
+    const target = join(realRoot, 'demo-team')
+    const link = join(linkRoot, 'demo-team')
+    const type = process.platform === 'win32' ? 'junction' : 'dir'
+    await symlink(target, link, type).catch((error) => {
+      if (error.code === 'EPERM') return // no symlink privilege: environment cannot exercise this
+      throw error
+    })
+    const candidates = await discoverTeams(testConfig({ teamDirs: [linkRoot] }), {})
+    assert.equal(candidates.length, 1)
+    assert.equal(candidates[0].name, 'experts-demo-team')
   })
 
   it('an aborted signal yields an incomplete observation', async () => {

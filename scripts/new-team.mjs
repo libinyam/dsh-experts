@@ -7,12 +7,11 @@
  *   node scripts/new-team.mjs --name my-team [--from web-review] [--root <dir>]
  */
 
-import { cp, mkdir, readdir, stat } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readFile, writeFile } from 'node:fs/promises'
 
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -38,9 +37,17 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--help' || arg === '-h') usage(0)
-    if (arg === '--name') out.name = argv[++i]
-    else if (arg === '--from') out.from = argv[++i]
-    else if (arg === '--root') out.root = argv[++i]
+    const take = (flag) => {
+      const value = argv[++i]
+      if (value === undefined || value.startsWith('--')) {
+        process.stderr.write(`${flag} requires a value\n`)
+        usage(2)
+      }
+      return value
+    }
+    if (arg === '--name') out.name = take('--name')
+    else if (arg === '--from') out.from = take('--from')
+    else if (arg === '--root') out.root = take('--root')
     else {
       process.stderr.write(`Unknown argument: ${arg}\n`)
       usage(2)

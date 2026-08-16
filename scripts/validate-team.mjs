@@ -2,8 +2,8 @@
 /**
  * Standalone team validator — runs the exact same validation the engine's
  * skill provider runs at discovery, so users can check a team before dropping
- * it into a teams root. Exits non-zero with the precise file and reason on
- * the first violation.
+ * it into a teams root. Validates every directory, reports each failure with
+ * its file and reason, and exits non-zero if any failed.
  *
  * Usage: node scripts/validate-team.mjs <teamDir> [<teamDir> ...]
  */

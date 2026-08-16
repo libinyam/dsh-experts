@@ -12,8 +12,8 @@
  * malformed team both fail loud with the precise path.
  */
 
-import { readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, readdir, stat } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { pluginError } from './errors.js'
 import { bundledTeamsDir, dshHome, findGitRoot, templatesDir } from './paths.js'
 import { validateTeam } from './manifest.js'
@@ -43,10 +43,40 @@ async function scanRoot(root, source, rank) {
   }
   const teams = []
   for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue
-    teams.push({ teamDir: join(root, entry.name), source, rank })
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue
+    let isDir = entry.isDirectory()
+    if (!isDir && entry.isSymbolicLink()) {
+      // symlinked team dirs are a supported organization form; follow and
+      // classify by target type (card containment is enforced separately)
+      try {
+        isDir = (await stat(join(root, entry.name))).isDirectory()
+      } catch {
+        isDir = false
+      }
+    }
+    if (isDir) teams.push({ teamDir: resolve(join(root, entry.name)), source, rank })
   }
   return teams
+}
+
+/** Cheap name extraction for dedupe; full validation runs on winners only. */
+async function readTeamName(teamDir) {
+  let raw
+  try {
+    raw = await readFile(join(teamDir, 'team.json'), 'utf8')
+  } catch (cause) {
+    throw pluginError(`dsh-experts: team.json not found or unreadable in ${teamDir}`, 'TEAM_READ_FAILED', { teamDir, cause })
+  }
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch (cause) {
+    throw pluginError(`dsh-experts: ${join(teamDir, 'team.json')}: cannot read team name for dedupe: ${cause.message}`, 'INVALID_TEAM', { teamDir })
+  }
+  if (parsed === null || typeof parsed !== 'object' || typeof parsed.name !== 'string') {
+    throw pluginError(`dsh-experts: ${join(teamDir, 'team.json')}: manifest root must be a JSON object with a string "name"`, 'INVALID_TEAM', { teamDir })
+  }
+  return parsed.name
 }
 
 /**
@@ -54,7 +84,7 @@ async function scanRoot(root, source, rank) {
  * incomplete observation when `signal` aborted mid-scan).
  */
 export async function discoverTeams(resolved, options = {}) {
-  const cwd = typeof options.cwd === 'string' ? options.cwd : undefined
+  const cwd = typeof options.cwd === 'string' ? resolve(options.cwd) : undefined
   const signal = options.signal
   const roots = []
   if (resolved.includeDefaultRoots) {
@@ -62,7 +92,7 @@ export async function discoverTeams(resolved, options = {}) {
     if (projectRoot !== null) roots.push({ path: join(projectRoot, '.dsh', 'experts'), source: 'project-dsh', rank: PROJECT_RANK })
     roots.push({ path: join(dshHome(resolved.dshHome), 'experts'), source: 'user-dsh', rank: USER_RANK })
   }
-  for (const dir of resolved.teamDirs) roots.push({ path: dir, source: 'custom', rank: CUSTOM_RANK })
+  for (const dir of resolved.teamDirs) roots.push({ path: resolve(dir), source: 'custom', rank: CUSTOM_RANK })
   if (resolved.includeBundledTeams) {
     roots.push({ path: bundledTeamsDir(), source: 'bundled', rank: BUNDLED_RANK })
   }
@@ -71,21 +101,24 @@ export async function discoverTeams(resolved, options = {}) {
   const byName = new Map()
   let aborted = false
   scan: for (const root of roots) {
-    for (const { teamDir, source, rank } of await scanRoot(root.path, root.source, root.rank)) {
+    for (const team of await scanRoot(root.path, root.source, root.rank)) {
       if (signal !== undefined && signal.aborted) {
         aborted = true
         break scan
       }
-      const manifest = await validateTeam(teamDir, { availableWorkflows })
-      const existing = byName.get(manifest.name)
-      if (existing === undefined || rank < existing.rank) {
-        byName.set(manifest.name, { manifest, source, rank })
+      const name = await readTeamName(team.teamDir)
+      const existing = byName.get(name)
+      if (existing === undefined || team.rank < existing.rank) {
+        byName.set(name, team)
       }
     }
   }
-  const candidates = [...byName.values()]
-    .sort((a, b) => a.manifest.name.localeCompare(b.manifest.name))
-    .map(({ manifest, source, rank }) => toCandidate(resolved, manifest, source, rank))
+  const candidates = []
+  for (const team of byName.values()) {
+    const manifest = await validateTeam(team.teamDir, { availableWorkflows })
+    candidates.push(toCandidate(resolved, manifest, team.source, team.rank))
+  }
+  candidates.sort((a, b) => a.name.localeCompare(b.name))
   return aborted ? { candidates, complete: false } : candidates
 }
 
@@ -136,7 +169,7 @@ export async function loadTeam(resolved, candidate, options = {}) {
     invocation: { modelInvocable: true, userInvocable: true },
     source: locator.source,
     provider: resolved.providerName,
-    ...(manifest.teamDir === undefined ? {} : { resourceBase: { kind: 'directory', path: manifest.teamDir } }),
+    resourceBase: { kind: 'directory', path: manifest.teamDir },
     content,
     path: join(manifest.teamDir, 'team.json'),
     metadata: {

@@ -9,7 +9,7 @@ import { pluginError } from './errors.js'
 const ALLOWED_KEYS = ['providerName', 'includeDefaultRoots', 'dshHome', 'teamDirs', 'includeBundledTeams']
 
 function nonEmptyString(value, fallback, field) {
-  const resolved = value ?? fallback
+  const resolved = value === null ? invalidNull(field) : value ?? fallback
   if (typeof resolved !== 'string' || resolved.trim() === '') {
     throw pluginError(`dsh-experts: ${field} must be a non-empty string`, 'INVALID_CONFIG')
   }
@@ -17,7 +17,7 @@ function nonEmptyString(value, fallback, field) {
 }
 
 function strictBoolean(value, fallback, field) {
-  const resolved = value ?? fallback
+  const resolved = value === null ? invalidNull(field) : value ?? fallback
   if (typeof resolved !== 'boolean') {
     throw pluginError(`dsh-experts: ${field} must be a boolean`, 'INVALID_CONFIG')
   }
@@ -25,11 +25,15 @@ function strictBoolean(value, fallback, field) {
 }
 
 function stringArray(value, fallback, field) {
-  const resolved = value ?? fallback
+  const resolved = value === null ? invalidNull(field) : value ?? fallback
   if (!Array.isArray(resolved) || resolved.some((item) => typeof item !== 'string' || item.trim() === '')) {
     throw pluginError(`dsh-experts: ${field} must be an array of non-empty strings`, 'INVALID_CONFIG')
   }
   return resolved.map((item) => item.trim())
+}
+
+function invalidNull(field) {
+  throw pluginError(`dsh-experts: ${field} must not be null (omit the key to use the default)`, 'INVALID_CONFIG')
 }
 
 /** Validate and normalize raw plugin config into a frozen options object. */
@@ -44,7 +48,8 @@ export function resolveConfig(config = {}) {
       'INVALID_CONFIG',
     )
   }
-  const dshHome = config.dshHome === undefined || config.dshHome === null ? undefined : nonEmptyString(config.dshHome, undefined, 'dshHome')
+  if (config.dshHome !== undefined) nonEmptyString(config.dshHome, undefined, 'dshHome') // null is rejected here too
+  const dshHome = config.dshHome === undefined ? undefined : config.dshHome.trim()
   return Object.freeze({
     providerName: nonEmptyString(config.providerName, 'dsh-experts', 'providerName'),
     includeDefaultRoots: strictBoolean(config.includeDefaultRoots, true, 'includeDefaultRoots'),

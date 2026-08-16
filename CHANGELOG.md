@@ -10,3 +10,4 @@
 - 示例团队：`web-review`（tech-lead 协调者 + 前端/后端/测试/安全，5 条升级路由）。
 - 脚手架：`scripts/new-team.mjs --name <team> [--from <team|路径>] [--root <dir>]`。
 - 测试：单元 + 宪法守护（`npm test` / `npm run guard`）。
+- 对抗审查修复（issue #5）：拒绝 Windows 盘符前缀与 NUL 的卡片路径（跨盘逃逸，P0）；TEAM.md 超限改为 fail-loud（原先被静默吞掉）；自由文本字段（description/whenToUse/modelHint/escalations.when）强制单行无管道符（防 markdown 注入）；卡片禁止 4+ 反引号围栏行；config 的 null 不再静默落默认值；symlink 团队目录可被发现；同名团队先去重后校验（有效低 rank 遮蔽坏团队）；错误码收敛为 `ERROR_CODES` 单一事实源并由守护双向同步。

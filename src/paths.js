@@ -40,7 +40,9 @@ async function pathExists(target) {
     await stat(target)
     return true
   } catch (error) {
-    if (error !== null && typeof error === 'object' && error.code === 'ENOENT') return false
+    if (error !== null && typeof error === 'object' && ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(error.code)) {
+      return false // unreadable ancestors read as "no .git here"; keep walking up
+    }
     throw error
   }
 }

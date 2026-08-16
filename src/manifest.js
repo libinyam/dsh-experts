@@ -30,6 +30,16 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+/**
+ * Free-text fields that are interpolated into the skill body (tables, headers)
+ * must stay single-line and pipe-free, or they could forge markdown structure.
+ */
+function assertSafeInlineText(teamDir, value, field) {
+  if (/[\n\r|]/.test(value)) {
+    fail(teamDir, `${field} must be a single line without "|" (would break markdown structure): ${JSON.stringify(value)}`)
+  }
+}
+
 function rejectUnknownKeys(teamDir, object, allowed, where) {
   const unknown = Object.keys(object).filter((key) => !allowed.includes(key))
   if (unknown.length > 0) {
@@ -39,14 +49,22 @@ function rejectUnknownKeys(teamDir, object, allowed, where) {
 
 /**
  * Verify a card path stays inside the team directory after normalization and
- * symlink resolution. Absolute paths and `..` escapes are rejected.
+ * symlink resolution. Absolute paths, drive-prefixed paths (`C:foo` is
+ * drive-relative on win32 and escapes via resolve), NUL bytes, and `..`
+ * escapes are rejected on every platform.
  */
 async function assertInsideTeamDir(teamDir, cardPath) {
   if (typeof cardPath !== 'string' || cardPath.trim() === '') {
     fail(teamDir, `expert card must be a non-empty relative path, got ${JSON.stringify(cardPath)}`)
   }
+  if (cardPath.includes('\0')) {
+    fail(teamDir, `expert card path contains a NUL byte: ${JSON.stringify(cardPath)}`)
+  }
   if (isAbsolute(cardPath)) {
     fail(teamDir, `expert card must be relative, got absolute path ${cardPath}`)
+  }
+  if (/^[A-Za-z]:/.test(cardPath)) {
+    fail(teamDir, `expert card must not carry a drive prefix: ${cardPath}`)
   }
   const resolved = resolve(teamDir, cardPath)
   const rel = relative(teamDir, resolved)
@@ -89,8 +107,9 @@ async function readCard(teamDir, cardPath) {
   if (info.size > MAX_CARD_BYTES) {
     fail(teamDir, `expert card exceeds ${MAX_CARD_BYTES} bytes: ${cardPath} (${info.size} bytes)`)
   }
+  let content
   try {
-    return await readFile(resolved, 'utf8')
+    content = await readFile(resolved, 'utf8')
   } catch (cause) {
     throw pluginError(`dsh-experts: expert card unreadable: ${resolved}`, 'CARD_READ_FAILED', {
       teamDir,
@@ -98,6 +117,10 @@ async function readCard(teamDir, cardPath) {
       cause,
     })
   }
+  if (/^\s*`{4,}/m.test(content)) {
+    fail(teamDir, `expert card contains a 4+ backtick fence line which would break skill-body fencing: ${cardPath}`)
+  }
+  return content
 }
 
 /**
@@ -108,7 +131,7 @@ async function readCard(teamDir, cardPath) {
  * @param {{availableWorkflows: readonly string[]}} context
  */
 export async function validateTeam(teamDir, { availableWorkflows }) {
-  if (!isPlainObjectAvailableWorkflows(availableWorkflows)) {
+  if (!isWorkflowList(availableWorkflows)) {
     throw pluginError('dsh-experts: availableWorkflows must be an array of template names', 'INVALID_CONFIG')
   }
   let raw
@@ -137,11 +160,13 @@ export async function validateTeam(teamDir, { availableWorkflows }) {
   const description = parsed.description
   if (typeof description !== 'string' || description.trim() === '') fail(teamDir, 'description must be a non-empty string')
   if (description.length > MAX_DESCRIPTION) fail(teamDir, `description exceeds ${MAX_DESCRIPTION} characters`)
+  assertSafeInlineText(teamDir, description, 'description')
 
   const whenToUse = parsed.whenToUse
   if (whenToUse !== undefined && (typeof whenToUse !== 'string' || whenToUse.trim() === '')) {
     fail(teamDir, 'whenToUse must be a non-empty string when present')
   }
+  if (whenToUse !== undefined) assertSafeInlineText(teamDir, whenToUse, 'whenToUse')
 
   const workflow = parsed.workflow
   if (typeof workflow !== 'string' || !availableWorkflows.includes(workflow)) {
@@ -172,6 +197,7 @@ export async function validateTeam(teamDir, { availableWorkflows }) {
     if (expert.modelHint !== undefined && (typeof expert.modelHint !== 'string' || expert.modelHint.trim() === '')) {
       fail(teamDir, `experts[${index}].modelHint must be a non-empty string when present`)
     }
+    if (expert.modelHint !== undefined) assertSafeInlineText(teamDir, expert.modelHint, `experts[${index}].modelHint`)
     cards.set(id, await readCard(teamDir, expert.card))
   }
   if (coordinators !== 1) {
@@ -189,6 +215,7 @@ export async function validateTeam(teamDir, { availableWorkflows }) {
     if (typeof esc.when !== 'string' || esc.when.trim() === '') {
       fail(teamDir, `escalations[${index}].when must be a non-empty string`)
     }
+    assertSafeInlineText(teamDir, esc.when, `escalations[${index}].when`)
     if (!PRIORITIES.includes(esc.priority)) {
       fail(teamDir, `escalations[${index}].priority must be one of [${PRIORITIES.join(', ')}], got ${JSON.stringify(esc.priority)}`)
     }
@@ -201,14 +228,25 @@ export async function validateTeam(teamDir, { availableWorkflows }) {
 
   let teamProse = ''
   const prosePath = join(teamDir, 'TEAM.md')
+  let proseStat
   try {
-    const info = await stat(prosePath)
-    if (info.isFile()) {
-      if (info.size > MAX_TEAM_PROSE_BYTES) fail(teamDir, `TEAM.md exceeds ${MAX_TEAM_PROSE_BYTES} bytes (${info.size})`)
-      teamProse = await readFile(prosePath, 'utf8')
+    proseStat = await stat(prosePath)
+  } catch (cause) {
+    if (cause !== null && typeof cause === 'object' && cause.code === 'ENOENT') {
+      proseStat = undefined // TEAM.md is optional prose; absence is fine
+    } else {
+      throw pluginError(`dsh-experts: TEAM.md unreadable: ${prosePath}`, 'TEAM_READ_FAILED', { teamDir, cause })
     }
-  } catch {
-    teamProse = '' // TEAM.md is optional prose; absence is fine
+  }
+  if (proseStat !== undefined && proseStat.isFile()) {
+    if (proseStat.size > MAX_TEAM_PROSE_BYTES) {
+      fail(teamDir, `TEAM.md exceeds ${MAX_TEAM_PROSE_BYTES} bytes (${proseStat.size})`)
+    }
+    try {
+      teamProse = await readFile(prosePath, 'utf8')
+    } catch (cause) {
+      throw pluginError(`dsh-experts: TEAM.md unreadable: ${prosePath}`, 'TEAM_READ_FAILED', { teamDir, cause })
+    }
   }
 
   return Object.freeze({
@@ -232,6 +270,6 @@ export async function validateTeam(teamDir, { availableWorkflows }) {
   })
 }
 
-function isPlainObjectAvailableWorkflows(value) {
+function isWorkflowList(value) {
   return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.trim() !== '')
 }
