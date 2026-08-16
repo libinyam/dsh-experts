@@ -1,0 +1,51 @@
+{
+  "name": "dsh-experts",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness bundle that turns expert teams (markdown persona rosters) into model-routable skills. Engine and roster are separate: teams are data directories users can author.",
+  "type": "module",
+  "main": "./src/index.js",
+  "license": "MIT",
+  "author": "libinyam",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/libinyam/dsh-experts.git"
+  },
+  "files": [
+    "src",
+    "teams",
+    "templates",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "exports": {
+    ".": "./src/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node --test",
+    "guard": "node --test tests/guard.test.js",
+    "validate-team": "node scripts/validate-team.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "experts",
+    "multi-agent",
+    "profile-bundle",
+    "skill-provider",
+    "agent-team"
+  ]
+}

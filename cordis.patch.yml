@@ -1,0 +1,14 @@
+# Registers the dsh-experts skill provider. Every discovered team directory
+# (project .dsh/experts, user <dshHome>/experts, extra teamDirs, plus the
+# bundled example teams) appears in the skill catalog as `experts-<team>`.
+# All config keys are optional; !!js expressions allow env overrides.
+
+- insert:
+    - id: dsh-experts
+      name: dsh-experts
+      config:
+        providerName: !!js process.env.DSH_EXPERTS_PROVIDER_NAME?.trim() || 'dsh-experts'
+        includeDefaultRoots: !!js process.env.DSH_EXPERTS_INCLUDE_DEFAULT_ROOTS !== '0'
+        dshHome: !!js process.env.DSH_HOME?.trim() || undefined
+        teamDirs: !!js (process.env.DSH_EXPERTS_TEAM_DIRS || '').split(/[;,]/).map((s) => s.trim()).filter(Boolean)
+        includeBundledTeams: !!js process.env.DSH_EXPERTS_INCLUDE_BUNDLED_TEAMS !== '0'
